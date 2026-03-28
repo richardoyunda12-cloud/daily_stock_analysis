@@ -180,8 +180,8 @@ class YfinanceFetcher(BaseFetcher):
                 tickers=yf_code,
                 start=start_date,
                 end=end_date,
-                progress=False,  # 禁止进度条
-                auto_adjust=True,  # 自动调整价格（复权）
+                progress=False,       # 禁止进度条
+                auto_adjust=True,     # 自动调整价格（复权）
                 multi_level_index=True
             )
 
@@ -236,7 +236,6 @@ class YfinanceFetcher(BaseFetcher):
             'Close': 'close',
             'Volume': 'volume',
         }
-
         df = df.rename(columns=column_mapping)
 
         # 计算涨跌幅（因为 yfinance 不直接提供）
@@ -524,6 +523,7 @@ class YfinanceFetcher(BaseFetcher):
                 total_mv=None,
                 circ_mv=None,
             )
+
             logger.info(f"[Stooq] 获取美股 {symbol} 兜底行情成功: 价格={price}")
             return quote
         except Exception as exc:
@@ -609,6 +609,7 @@ class YfinanceFetcher(BaseFetcher):
                 total_mv=None,
                 circ_mv=None,
             )
+
             logger.info(f"[Yfinance] 获取美股指数 {user_code} 实时行情成功: 价格={price}")
             return quote
         except Exception as e:
@@ -695,10 +696,24 @@ class YfinanceFetcher(BaseFetcher):
             if high is not None and low is not None and prev_close is not None and prev_close > 0:
                 amplitude = ((high - low) / prev_close) * 100
 
-            # 获取股票名称
+            # =========================================================
+            # FIX: 获取股票名称 + fundamental data (PE, PB)
+            # 原来 pe_ratio=None, pb_ratio=None 是 hardcoded
+            # 现在从 ticker.info 直接取，同一次 API call juga ambil name
+            # =========================================================
+            pe_ratio = None
+            pb_ratio = None
             try:
-                info_name = ticker.info.get('shortName', '') or ticker.info.get('longName', '') or ''
+                full_info = ticker.info
+                info_name = full_info.get('shortName', '') or full_info.get('longName', '') or ''
                 name = info_name if is_meaningful_stock_name(info_name, symbol) else STOCK_NAME_MAP.get(symbol, '')
+                # Extract PE and PB
+                _pe = full_info.get('trailingPE') or full_info.get('forwardPE')
+                _pb = full_info.get('priceToBook')
+                pe_ratio = round(float(_pe), 2) if _pe is not None else None
+                pb_ratio = round(float(_pb), 2) if _pb is not None else None
+                if pe_ratio or pb_ratio:
+                    logger.debug(f"[Yfinance] {symbol} PE={pe_ratio}, PB={pb_ratio}")
             except Exception:
                 name = STOCK_NAME_MAP.get(symbol, '')
 
@@ -718,8 +733,8 @@ class YfinanceFetcher(BaseFetcher):
                 high=high,
                 low=low,
                 pre_close=prev_close,
-                pe_ratio=None,
-                pb_ratio=None,
+                pe_ratio=pe_ratio,   # FIX: was None
+                pb_ratio=pb_ratio,   # FIX: was None
                 total_mv=market_cap,
                 circ_mv=None,
             )
